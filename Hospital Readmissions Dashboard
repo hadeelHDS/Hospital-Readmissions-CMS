@@ -1,0 +1,311 @@
+import pandas as pd
+from IPython.display import display, HTML
+
+df = pd.read_csv(FILE_PATH)
+
+# Re-create the helper columns 
+LABELS = {
+    'READM-30-AMI-HRRP': 'Heart attack (AMI)', 'READM-30-CABG-HRRP': 'CABG surgery',
+    'READM-30-COPD-HRRP': 'COPD', 'READM-30-HF-HRRP': 'Heart failure',
+    'READM-30-HIP-KNEE-HRRP': 'Hip/knee replacement', 'READM-30-PN-HRRP': 'Pneumonia',
+}
+for c in ['Excess Readmission Ratio', 'Predicted Readmission Rate',
+          'Expected Readmission Rate', 'Number of Discharges']:
+    df[c] = pd.to_numeric(df[c], errors='coerce')
+df = df.dropna(subset=['Excess Readmission Ratio'])
+df['Condition'] = df['Measure Name'].map(LABELS).fillna(df['Measure Name'])
+df['worse_than_expected'] = df['Excess Readmission Ratio'] > 1
+df['excess_readmissions'] = ((df['Predicted Readmission Rate'] - df['Expected Readmission Rate'])
+                             / 100 * df['Number of Discharges'])
+df['err_x_dis'] = df['Excess Readmission Ratio'] * df['Number of Discharges']
+
+period = f"{df['Start Date'].min()} to {df['End Date'].max()}"
+print(df.shape, '| period:', period)
+
+
+##### Colours, charts and page layout#####
+
+import pandas as pd
+import plotly.graph_objects as go
+
+# ---- Colour system: each condition keeps the same colour in every chart ----
+COND_COLORS = {
+    'Heart failure': '#7B2CBF',        # purple
+    'Pneumonia': '#3A86FF',            # blue
+    'COPD': '#00B4D8',                 # cyan
+    'Heart attack (AMI)': '#FF006E',   # magenta
+    'CABG surgery': '#FB8500',         # orange
+    'Hip/knee replacement': '#FFBE0B', # amber
+}
+WORSE, BETTER, NAVY = '#E63946', '#2A9D8F', '#14213D'
+FONT = 'Figtree, Segoe UI, Arial, sans-serif'
+CONFIG = {'displayModeBar': False, 'responsive': True}
+
+
+def color_of(cond):
+    return COND_COLORS.get(cond, '#8D99AE')
+
+
+def style(fig, height=380):
+    fig.update_layout(font=dict(family=FONT, size=13, color='#33415C'),
+                      paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                      height=height, margin=dict(l=10, r=30, t=10, b=10),
+                      hoverlabel=dict(font_family=FONT))
+    fig.update_xaxes(gridcolor='#E9EDF5', zeroline=False)
+    fig.update_yaxes(gridcolor='#E9EDF5', zeroline=False)
+    return fig
+
+
+def state_table(df, condition):
+    c = df[df['Condition'] == condition]
+    s = c.groupby('State')[['err_x_dis', 'Number of Discharges']].sum()
+    s['Weighted ERR'] = s['err_x_dis'] / s['Number of Discharges']
+    return s.dropna().reset_index()[['State', 'Weighted ERR']]
+
+
+# ---------------- Charts ----------------
+def chart_excess(summary):
+    s = summary.sort_values('Gross excess readmissions')
+    fig = go.Figure(go.Bar(
+        x=s['Gross excess readmissions'], y=s['Condition'], orientation='h',
+        marker=dict(color=[color_of(c) for c in s['Condition']]),
+        text=[f'{v:,.0f}' for v in s['Gross excess readmissions']], textposition='outside',
+        hovertemplate='%{y}: %{x:,.0f} excess readmissions<extra></extra>'))
+    fig.update_xaxes(title='Estimated excess readmissions',
+                     range=[0, s['Gross excess readmissions'].max() * 1.15])
+    return style(fig)
+
+
+def chart_share(summary):
+    total = summary['Gross excess readmissions'].sum()
+    fig = go.Figure(go.Pie(
+        labels=summary['Condition'], values=summary['Gross excess readmissions'], hole=0.62,
+        marker=dict(colors=[color_of(c) for c in summary['Condition']],
+                    line=dict(color='white', width=3)),
+        sort=False, textinfo='percent', textfont=dict(color='white', size=13),
+        texttemplate=['%{percent:.0%}' if v / total >= 0.05 else '' for v in summary['Gross excess readmissions']],
+        hovertemplate='%{label}: %{value:,.0f} (%{percent})<extra></extra>'))
+    fig.add_annotation(text=f'<b>{total:,.0f}</b><br>excess<br>readmissions',
+                       showarrow=False, font=dict(size=15, color=NAVY))
+    fig.update_layout(showlegend=True, legend=dict(orientation='h', y=-0.08, x=0.5, xanchor='center'))
+    return style(fig)
+
+
+def chart_split(summary):
+    s = summary.sort_values('% worse than expected')
+    worse = s['% worse than expected']
+    fig = go.Figure()
+    fig.add_bar(y=s['Condition'], x=worse, orientation='h', name='Worse than expected',
+                marker_color=WORSE, text=[f'{v:.1f}%' for v in worse], textposition='inside',
+                insidetextanchor='start', hovertemplate='%{y}: %{x:.1f}% worse<extra></extra>')
+    fig.add_bar(y=s['Condition'], x=100 - worse, orientation='h', name='As expected or better',
+                marker_color=BETTER, text=[f'{100 - v:.1f}%' for v in worse], textposition='inside',
+                insidetextanchor='end', hovertemplate='%{y}: %{x:.1f}% as expected or better<extra></extra>')
+    fig.add_vline(x=50, line_dash='dot', line_color=NAVY, line_width=2)
+    fig.update_layout(barmode='stack', legend=dict(orientation='h', y=-0.15, x=0.5, xanchor='center'))
+    fig.update_xaxes(range=[0, 100], ticksuffix='%')
+    fig.update_traces(textfont=dict(color='white'))
+    return style(fig)
+
+
+def chart_net_gross(summary):
+    s = summary.sort_values('Gross excess readmissions', ascending=False)
+    fig = go.Figure()
+    fig.add_bar(x=s['Condition'], y=s['Gross excess readmissions'], name='Gross (hospitals above expected)',
+                marker_color=WORSE, hovertemplate='%{x}: %{y:,.0f}<extra>Gross</extra>')
+    fig.add_bar(x=s['Condition'], y=s['Net excess readmissions'], name='Net (after better hospitals offset)',
+                marker_color=NAVY, hovertemplate='%{x}: %{y:,.0f}<extra>Net</extra>')
+    fig.add_hline(y=0, line_color='#8D99AE')
+    fig.update_xaxes(tickangle=0, tickvals=list(s['Condition']),
+                     ticktext=[c.replace(' ', '<br>', 1) for c in s['Condition']])
+    fig.update_layout(barmode='group', legend=dict(orientation='h', y=-0.25, x=0.5, xanchor='center'))
+    fig.update_yaxes(title='Readmissions')
+    return style(fig)
+
+
+ERR_SCALE = [[0, BETTER], [0.5, '#F8F9FB'], [1, WORSE]]
+
+
+def chart_map(by_state, condition):
+    span = max(abs(by_state['Weighted ERR'] - 1).max(), 0.01)
+    fig = go.Figure(go.Choropleth(
+        locations=by_state['State'], z=by_state['Weighted ERR'], locationmode='USA-states',
+        colorscale=ERR_SCALE, zmin=1 - span, zmax=1 + span, zmid=1,
+        marker_line_color='white', marker_line_width=1,
+        colorbar=dict(title='ERR', thickness=12, len=0.8),
+        hovertemplate='%{location}: %{z:.3f}<extra></extra>'))
+    fig.update_geos(scope='usa', bgcolor='rgba(0,0,0,0)', showlakes=False)
+    return style(fig, height=430)
+
+
+def chart_rank(by_state, n=8):
+    s = by_state.sort_values('Weighted ERR')
+    pick = pd.concat([s.head(n), s.tail(n)]).drop_duplicates()
+    fig = go.Figure(go.Bar(
+        x=pick['Weighted ERR'] - 1, y=pick['State'], orientation='h', base=1,
+        marker_color=[WORSE if v > 1 else BETTER for v in pick['Weighted ERR']],
+        text=[f'{v:.3f}' for v in pick['Weighted ERR']], textposition='outside',
+        hovertemplate='%{y}: %{text}<extra></extra>'))
+    fig.add_vline(x=1, line_color=NAVY, line_width=2)
+    lo, hi = pick['Weighted ERR'].min(), pick['Weighted ERR'].max()
+    pad = (hi - lo) * 0.25
+    fig.update_xaxes(range=[lo - pad, hi + pad], title='Weighted ERR (1.0 = as expected)')
+    return style(fig, height=430)
+
+
+# ---------------- Page ----------------
+def table_html(summary):
+    mx = summary['Gross excess readmissions'].max()
+    rows = ''
+    for _, r in summary.iterrows():
+        col = color_of(r['Condition'])
+        w = r['Gross excess readmissions'] / mx * 100
+        rows += (f'<tr><td><span class="dot" style="background:{col}"></span>{r["Condition"]}</td>'
+                 f'<td>{int(r["Hospitals"]):,}</td><td>{r["% worse than expected"]:.1f}%</td>'
+                 f'<td>{r["Weighted ERR"]:.3f}</td><td>{r["Net excess readmissions"]:,.0f}</td>'
+                 f'<td><div class="barcell"><div class="bar" style="width:{w:.0f}%;background:{col}"></div>'
+                 f'<span>{r["Gross excess readmissions"]:,.0f}</span></div></td></tr>')
+    return ('<table><thead><tr><th>Condition</th><th>Hospitals</th><th>% worse</th>'
+            '<th>Weighted ERR</th><th>Net excess</th><th>Gross excess</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>')
+
+
+CSS = """
+*{box-sizing:border-box}
+body{margin:0;font-family:Figtree,'Segoe UI',Arial,sans-serif;background:#F1F4FA;color:#33415C}
+header{background:linear-gradient(120deg,#14213D 0%,#3A0CA3 55%,#7B2CBF 100%);color:#fff;padding:34px 28px 80px}
+header h1{margin:0 0 6px;font-size:30px;font-weight:800}
+header p{margin:0;opacity:.85;font-size:15px}
+main{max-width:1200px;margin:-56px auto 40px;padding:0 20px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+.kpi{border-radius:14px;padding:18px 20px;color:#fff;box-shadow:0 6px 18px rgba(20,33,61,.15)}
+.kpi .label{font-size:14px;opacity:.9}
+.kpi .value{font-size:30px;font-weight:800;margin-top:4px}
+.kpi .note{font-size:12.5px;opacity:.85;margin-top:2px}
+.grid{display:grid;grid-template-columns:3fr 2fr;gap:20px;margin-bottom:20px}
+.grid.even{grid-template-columns:1fr 1fr}
+.card{background:#fff;border-radius:14px;padding:20px 20px 12px;box-shadow:0 2px 10px rgba(20,33,61,.06);min-width:0}
+.card h2{margin:0;font-size:18px;color:#14213D}
+.card .takeaway{margin:6px 0 4px;font-size:14px;color:#5C677D;border-left:4px solid var(--accent,#7B2CBF);padding-left:10px}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}
+th{text-align:left;font-weight:600;color:#5C677D;border-bottom:2px solid #E9EDF5;padding:10px 8px}
+td{padding:10px 8px;border-bottom:1px solid #F0F2F7}
+.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:8px}
+.barcell{display:flex;align-items:center;gap:8px}
+.bar{height:12px;border-radius:6px;min-width:3px;max-width:140px;flex:none}
+.tablewrap{overflow-x:auto}
+.method{font-size:13.5px;line-height:1.6}
+@media (max-width:900px){.kpis{grid-template-columns:1fr 1fr}.grid,.grid.even{grid-template-columns:1fr}}
+"""
+
+
+def build_html(summary, by_state, condition, state_label, period, n_before, n_dropped):
+    summary = summary.sort_values('Gross excess readmissions', ascending=False).reset_index(drop=True)
+    records = int(summary['Hospitals'].sum())
+    pct_worse = (summary['% worse than expected'] * summary['Hospitals']).sum() / records
+    total = summary['Gross excess readmissions'].sum()
+    top, second = summary.iloc[0], summary.iloc[1]
+    top2_share = (top['Gross excess readmissions'] + second['Gross excess readmissions']) / total
+    lo, hi = summary['% worse than expected'].min(), summary['% worse than expected'].max()
+    neg = summary[summary['Net excess readmissions'] < 0]['Condition'].tolist()
+    bs = by_state.sort_values('Weighted ERR', ascending=False)
+    n_above = int((bs['Weighted ERR'] > 1).sum())
+
+    kpis = [
+        ('Hospital–condition records', f'{records:,}', 'after removing rows with no ERR', '#3A86FF'),
+        ('Worse than expected', f'{pct_worse:.1f}%', 'of all hospital results', WORSE),
+        ('Excess readmissions', f'{total:,.0f}', 'estimated patients (gross)', '#7B2CBF'),
+        ('Biggest opportunity', top['Condition'], f"{top['Gross excess readmissions']:,.0f} excess readmissions",
+         color_of(top['Condition'])),
+    ]
+    kpi_html = ''.join(f'<div class="kpi" style="background:{c}"><div class="label">{l}</div>'
+                       f'<div class="value">{v}</div><div class="note">{n}</div></div>' for l, v, n, c in kpis)
+
+    figs = [chart_excess(summary), chart_share(summary), chart_split(summary),
+            chart_net_gross(summary), chart_map(by_state, condition), chart_rank(by_state)]
+    h = [f.to_html(full_html=False, include_plotlyjs='cdn' if i == 0 else False, config=CONFIG)
+         for i, f in enumerate(figs)]
+
+    names = ' and '.join([', '.join(neg[:-1]), neg[-1]]) if len(neg) > 1 else (neg[0] if neg else '')
+    net_note = f' For {names}, the net total is below zero.' if neg else ''
+
+    def card(title, takeaway, body, accent):
+        return (f'<div class="card" style="--accent:{accent}"><h2>{title}</h2>'
+                f'<p class="takeaway">{takeaway}</p>{body}</div>')
+
+    removed = (f'{n_dropped:,} of {n_before:,} rows ({n_dropped / n_before:.1%})'
+               if n_before else '[add your numbers: N_BEFORE and N_DROPPED]')
+
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hospital Readmissions Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;800&display=swap" rel="stylesheet">
+<style>{CSS}</style></head><body>
+<header><h1>Hospital Readmissions Dashboard</h1>
+<p>{state_label} · Performance period {period} · Source: CMS Hospital Readmissions Reduction Program</p></header>
+<main>
+<section class="kpis">{kpi_html}</section>
+<section class="grid">
+{card('Where would improvement help most patients?',
+      f"{top['Condition']} and {second['Condition']} account for {top2_share:.0%} of all excess readmissions.",
+      h[0], color_of(top['Condition']))}
+{card('Share of excess readmissions', 'Each colour is one condition, used the same way in every chart.', h[1], '#3A86FF')}
+</section>
+<section class="grid even">
+{card('How widespread is the problem?',
+      f'In every condition, about half of hospitals did worse than expected ({lo:.1f}% to {hi:.1f}%).', h[2], WORSE)}
+{card('Gross vs net excess readmissions',
+      'Hospitals that do better than expected offset those that do worse.' + net_note, h[3], NAVY)}
+</section>
+<section class="grid">
+{card(f'{condition}: readmission ratio by state',
+      f"{n_above} of {len(bs)} states are above 1.0 (red). Highest: {bs.iloc[0]['State']} ({bs.iloc[0]['Weighted ERR']:.3f}).",
+      h[4], WORSE)}
+{card('Highest and lowest states', 'Red = more readmissions than expected; teal = fewer.', h[5], BETTER)}
+</section>
+<section class="card" style="margin-bottom:20px"><h2>Summary by condition</h2>
+<div class="tablewrap">{table_html(summary)}</div></section>
+<section class="card method"><h2>Method and data notes</h2><ul>
+<li>Rows without an Excess Readmission Ratio ("Too Few to Report", N/A) were removed</li>
+<li><b>ERR</b> = Predicted ÷ Expected readmission rate, calculated by CMS with risk adjustment. ERR &gt; 1 means more readmissions than expected for the hospital's patients.</li>
+<li><b>Weighted ERR</b> is weighted by Number of Discharges, so larger hospitals count more.</li>
+<li><b>Excess readmissions</b> = (Predicted − Expected rate) ÷ 100 × Discharges. Gross counts only hospitals above expected; net lets better-than-expected hospitals offset them.</li>
+</ul></section>
+</main></body></html>"""
+
+
+def summarise(data):
+    g = data.groupby('Condition')
+    return pd.DataFrame({
+        'Hospitals': g.size(),
+        '% worse than expected': g['worse_than_expected'].mean() * 100,
+        'Weighted ERR': g['err_x_dis'].sum() / g['Number of Discharges'].sum(),
+        'Net excess readmissions': g['excess_readmissions'].sum(),
+        'Gross excess readmissions': g['excess_readmissions'].apply(lambda s: s[s > 0].sum()),
+    }).reset_index()
+
+##### Build, preview, save ####
+
+import os
+
+STATE = 'All states'     # e.g. 'NY'
+CONDITION = 'COPD'       # condition for the state map
+
+data = df if STATE == 'All states' else df[df['State'] == STATE]
+page = build_html(summarise(data), state_table(df, CONDITION), CONDITION,
+                  STATE, period, N_BEFORE, N_DROPPED)
+
+out_name = f"readmissions_dashboard_{STATE.replace(' ', '_')}_{CONDITION.replace('/', '-')}.html"
+out_dir = '/content/drive/MyDrive/Readmissions_Project'
+out_path = os.path.join(out_dir, out_name)
+
+# Automatically create the folder if it does not exist
+os.makedirs(out_dir, exist_ok=True)
+
+with open(out_path, 'w', encoding='utf-8') as f:
+    f.write(page)
+print('Saved to Drive:', out_path)
+
+display(HTML(page))          # preview inside Colab
+files.download(out_path)     # download to your computer
+
