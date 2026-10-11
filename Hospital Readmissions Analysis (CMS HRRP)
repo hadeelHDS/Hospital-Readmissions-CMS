@@ -1,0 +1,94 @@
+# Hospital Readmissions Analysis (CMS HRRP)
+
+Analysis of 30-day hospital readmissions for six conditions using the CMS
+Hospital Readmissions Reduction Program dataset (July 2021 – June 2024),
+with an interactive dashboard built in Python.
+
+## Indicators
+1. **% of hospitals worse than expected**: Excess Readmission Ratio (ERR) > 1
+2. **Discharge-weighted ERR** by condition
+3. **Estimated excess readmissions**: (Predicted − Expected rate) ÷ 100 × Discharges
+
+## Key findings
+- 48.1% of 11,720 hospital–condition results were worse than expected.
+- About 12,245 excess readmissions were estimated in total.
+- Heart failure and pneumonia accounted for 77% of excess readmissions.
+- For COPD, 31 of 51 states had a weighted ERR above 1.0.
+
+## Tools
+Python, pandas, Plotly, Google Colab
+
+## Files
+- `readmissions_dashboard_colab_v2.ipynb`: data cleaning, analysis, and dashboard
+- `readmissions_dashboard.html`: interactive dashboard (open in a browser)
+
+## Data
+Source: Centers for Medicare & Medicaid Services (CMS), Hospital Readmissions
+Reduction Program. Rows without an ERR ("Too Few to Report", N/A) were removed.
+
+## Limitations
+Medicare patients only; small hospitals are pulled toward the average;
+risk adjustment does not include social factors.
+
+##############################################################################################
+## Indcator analysis 
+
+import numpy as np
+import pandas as pd
+data = pd.read_csv('/content/Hospital_Readmissions_Reduction_Program_Hospital.csv')
+data.head()
+print(data.shape)
+
+## Clean Data 
+# crete new colmns
+
+num_cols=['Excess Readmission Ratio', 'Predicted Readmission Rate',
+          'Expected Readmission Rate','Number of Discharges']
+
+df=data.copy()
+
+for c in num_cols:
+  df[c]=pd.to_numeric(df[c] , errors='coerce')
+
+n_before = len(df)
+df=df.dropna(subset = ['Excess Readmission Ratio'])
+n_dropped = n_before - len(df)
+
+print(f"Dropped {n_dropped} of {n_before} rows ({n_dropped/n_before:.1%}) with no ERR")
+print ("Rows stll missing discharges:", df["Number of Discharges"].isna().sum())
+
+## Rename Conditions
+labels = {
+    "READM-30-AMI-HRRP": "Heart attack (AMI)",
+    "READM-30-CABG-HRRP" : 'CABG surgery',
+    'READM-30-COPD-HRRP': 'COPD',
+    'READM-30-HF-HRRP': 'Heart failuer',
+    'READM-30-HIP-KNEE-HRRP': ' Hip/knee replacement',
+    'READM-30-PN-HRRP': 'Pneumonia'
+}
+df['Condition'] = df['Measure Name'].map(labels).fillna(df['Measure Name'])
+
+### Analyse Indicatos 
+state = None        # e.g. 'NY' to focus on one state, or None for national
+focus = df if state is None else df[df['State'] == state]
+focus = focus.copy()
+
+focus['worse_than_expected'] = focus['Excess Readmission Ratio'] > 1
+focus['excess_readmissions'] = ((focus['Predicted Readmission Rate']
+                                 - focus['Expected Readmission Rate'])
+                                / 100 * focus['Number of Discharges'])
+focus['err_x_dis'] = focus['Excess Readmission Ratio'] * focus['Number of Discharges']
+
+g = focus.groupby('Condition')
+summary = pd.DataFrame({
+    'hospitals': g.size(),
+    'pct_worse': g['worse_than_expected'].mean() * 100,
+    'weighted_err': g['err_x_dis'].sum() / g['Number of Discharges'].sum(),
+    'net_excess_readmissions': g['excess_readmissions'].sum(),
+    'gross_excess_readmissions': g['excess_readmissions'].apply(lambda s: s[s > 0].sum()),
+}).round(2).sort_values('net_excess_readmissions', ascending=False)
+
+summary
+
+## Save the New Dataset 
+df.to_csv('df.csv', index=False)
