@@ -1,34 +1,61 @@
-# Hospital Readmissions Analysis (CMS HRRP)
+Here is a professional, recruitment-ready portfolio project documentation (`README.md`) based on your Hospital Readmissions dashboard. You can copy and paste this directly into your GitHub repository for this project.
 
-Analysis of 30-day hospital readmissions for six conditions using the CMS
-Hospital Readmissions Reduction Program dataset (July 2021 – June 2024),
-with an interactive dashboard built in Python.
+---
 
-## Indicators
-1. **% of hospitals worse than expected**: Excess Readmission Ratio (ERR) > 1
-2. **Discharge-weighted ERR** by condition
-3. **Estimated excess readmissions**: (Predicted − Expected rate) ÷ 100 × Discharges
+# 🏥 US Hospital Readmissions Analysis & Dashboard
 
-## Key findings
-- 48.1% of 11,720 hospital–condition results were worse than expected.
-- About 12,245 excess readmissions were estimated in total.
-- Heart failure and pneumonia accounted for 77% of excess readmissions.
-- For COPD, 31 of 51 states had a weighted ERR above 1.0.
+### 📌 Project Overview
 
-## Tools
-Python, pandas, Plotly, Google Colab
+An exploratory data analysis and interactive dashboard examining hospital performance across the United States using data from the **CMS Hospital Readmissions Reduction Program (HRRP)**. The analysis evaluates performance periods from July 2021 to June 2024, uncovering systemic patterns in excess patient readmissions across six key medical conditions.
 
-## Files
-- `readmissions_dashboard_colab_v2.ipynb`: data cleaning, analysis, and dashboard
-- `readmissions_dashboard.html`: interactive dashboard (open in a browser)
+* **Live Dashboard:** [View Live Web App](https://guileless-seahorse-41f83a.netlify.app)
+* **Tech Stack:** Python (Pandas, NumPy), Data Visualization / Web Dashboard
 
-## Data
-Source: Centers for Medicare & Medicaid Services (CMS), Hospital Readmissions
-Reduction Program. Rows without an ERR ("Too Few to Report", N/A) were removed.
+---
 
-## Limitations
-Medicare patients only; small hospitals are pulled toward the average;
-risk adjustment does not include social factors.
+## 📊 Executive Summary & Key Insights
+
+After cleaning and processing **11,720 hospital-condition records**, the analysis revealed critical operational and clinical insights:
+
+* **The Core Problem:** **48.1%** of all evaluated hospital results performed *"worse than expected"* (Excess Readmission Ratio > 1.0) across the board.
+* **The Biggest Opportunity:** **Heart failure** and **Pneumonia** represent a massive **77% of all gross excess readmissions** nationwide.
+* **Heart Failure:** Generated **4,856 excess readmissions** across 2,621 hospitals.
+* **Pneumonia:** Generated **4,525 excess readmissions** across 2,715 hospitals.
+
+
+* **Widespread Inconsistency:** Across *every single tracked condition*, roughly half of all hospitals (ranging from **46.8% to 49.9%**) underperformed against risk-adjusted expectations, pointing to systemic post-discharge transition gaps rather than isolated clinic errors.
+* **Gross vs. Net Dynamics:** Excellent performers offset underperformers in certain areas—for instance, high-performing hospitals drove the net total for Heart Failure below zero (-279 net excess), showing that best practices are achievable and already deployed by top facilities.
+
+---
+
+## 🛠️ Methodology & Metrics Defined
+
+To ensure accurate evaluation, risk-adjusted metrics from CMS guidelines were utilized:
+
+* **Excess Readmission Ratio (ERR):** Calculated as $\text{Predicted Rate} \div \text{Expected Rate}$. An $\text{ERR} > 1.0$ indicates higher readmissions than expected given patient mix risk factors.
+* **Weighted ERR:** Weighted by the total Number of Discharges to give proper weight to larger hospital volumes.
+* **Gross vs. Net Excess:** Gross counts *only* hospitals performing above expected thresholds, whereas Net accounts for offsetting positive margins from high-performing institutions.
+
+---
+
+## 📋 Summary Table by Condition
+
+| Condition | Hospital Count | % Worse Than Expected | Weighted ERR | Net Excess Readmissions | Gross Excess Readmissions |
+| --- | --- | --- | --- | --- | --- |
+| **Heart failure** | 2,621 | 48.9% | 0.998 | -279 | **4,856** |
+| **Pneumonia** | 2,715 | 46.8% | 1.009 | 1,173 | **4,525** |
+| **Heart attack (AMI)** | 1,736 | 49.7% | 1.000 | 53 | **1,130** |
+| **COPD** | 2,323 | 47.2% | 1.010 | 384 | **1,072** |
+| **CABG surgery** | 878 | 49.9% | 1.004 | 28 | **341** |
+| **Hip/knee replacement** | 1,447 | 47.9% | 0.918 | -395 | **321** |
+
+---
+
+## 💡 Strategic Recommendations for Healthcare Providers
+
+1. **Prioritize Transition-of-Care Programs for Heart Failure & Pneumonia:** Since these two conditions account for over three-quarters of excess readmissions, hospitals should instantly deploy targeted post-discharge check-ins, medication reconciliation, and remote patient monitoring for these patient cohorts.
+2. **Investigate Regional Outliers (e.g., COPD in Massachusetts):** State-level tracking identified localized spikes (such as Massachusetts recording a state average COPD ratio of 1.036 with 31 of 51 states trending above 1.0). Best-practice sharing should be established between low-ratio and high-ratio state networks.
+3. **Scale High-Performer Playbooks:** Because categories like Heart Failure and Hip/Knee Replacement achieved negative *net* totals thanks to stellar performances from leading institutions, healthcare networks should audit and replicate the discharge workflows of top-decile facilities.
 
 ##############################################################################################
 ## Indcator analysis 
